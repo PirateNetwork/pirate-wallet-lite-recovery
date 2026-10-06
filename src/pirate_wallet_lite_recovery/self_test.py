@@ -3,7 +3,7 @@
 import io
 import struct
 
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from Crypto.Cipher import AES
 from nacl.secret import SecretBox
 
 from .legacy import RecoveryError, bech32, password_key, recover
@@ -45,12 +45,11 @@ def run():
         pass
     else:
         raise RecoveryError('Installed password verification check failed.')
-    # Ensure the packaged cryptography backend can run AES-CBC, not merely import.
-    cipher = Cipher(algorithms.AES(bytes(32)), modes.CBC(bytes(16)))
-    encryptor = cipher.encryptor()
-    encrypted = encryptor.update(bytes(16)) + encryptor.finalize()
-    decryptor = cipher.decryptor()
-    if decryptor.update(encrypted) + decryptor.finalize() != bytes(16):
+    # Ensure the packaged AES backend can run AES-CBC, not merely import.
+    encryptor = AES.new(bytes(32), AES.MODE_CBC, iv=bytes(16))
+    encrypted = encryptor.encrypt(bytes(16))
+    decryptor = AES.new(bytes(32), AES.MODE_CBC, iv=bytes(16))
+    if decryptor.decrypt(encrypted) != bytes(16):
         raise RecoveryError('Installed AES backend check failed.')
     from .skull_island import recover_binary, recover_json
     skull = recover_json(io.BytesIO(_PUBLIC_SKULL_JSON),

@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 authors = [{ name = "Pirate Chain Developers" }]
-dependencies = ["PyNaCl==1.6.2", "mnemonic==0.21", "cryptography==50.0.2"]
+dependencies = ["PyNaCl==1.6.2", "mnemonic==0.21", "pycryptodome==3.24.0"]
 
 [project.urls]
 Repository = "https://github.com/PirateNetwork/pirate-wallet-lite-recovery"

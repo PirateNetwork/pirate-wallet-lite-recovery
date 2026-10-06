@@ -109,13 +109,12 @@ def recover_json(stream, password_provider):
     material = hmac.new(KEY_SALT, password, hashlib.sha512).digest()
     # Keep optional AES imports here so help/format detection remain available
     # even when a source installation has not yet installed its dependencies.
-    from cryptography.hazmat.primitives import padding
-    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    from Crypto.Cipher import AES
+    from Crypto.Util.Padding import unpad
     try:
-        decryptor = Cipher(algorithms.AES(material[:32]), modes.CBC(material[32:48])).decryptor()
-        padded = decryptor.update(ciphertext) + decryptor.finalize()
-        unpadder = padding.PKCS7(128).unpadder()
-        seed = (unpadder.update(padded) + unpadder.finalize()).decode('utf-8')
+        decryptor = AES.new(material[:32], AES.MODE_CBC, iv=material[32:48])
+        padded = decryptor.decrypt(ciphertext)
+        seed = unpad(padded, AES.block_size, style='pkcs7').decode('utf-8')
     except (ValueError, UnicodeError):
         raise RecoveryError(PASSWORD_ERROR) from None
     words = seed.split(' ')
