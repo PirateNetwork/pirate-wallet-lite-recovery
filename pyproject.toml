@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools==84.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pirate-wallet-lite-recovery"
+version = "1.0.0"
+description = "Offline seed and key recovery for Pirate Wallet Lite and Skull Island"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Pirate Chain Developers" }]
+dependencies = ["PyNaCl==1.6.2", "mnemonic==0.21", "cryptography==50.0.2"]
+
+[project.urls]
+Repository = "https://github.com/PirateNetwork/pirate-wallet-lite-recovery"
+
+[project.scripts]
+pirate-wallet-lite-recovery = "pirate_wallet_lite_recovery.cli:entrypoint"
+
+[tool.setuptools.packages.find]
+where = ["src"]
