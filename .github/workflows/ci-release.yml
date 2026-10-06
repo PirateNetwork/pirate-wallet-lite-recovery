@@ -1,0 +1,169 @@
+name: Native tests, packages, and signed releases
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  PYTHON_VERSION: '3.13.16'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
+jobs:
+  validate-release:
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.validate.outputs.version }}
+      tag: ${{ steps.validate.outputs.tag }}
+      trusted_sha: ${{ steps.validate.outputs.trusted_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Require matching version and a commit on the default branch
+        id: validate
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_SHA: ${{ github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: python scripts/validate_release.py --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --default-branch "$DEFAULT_BRANCH"
+
+  build:
+    name: Test and package (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: windows-x64
+            runner: windows-2022
+            architecture: x64
+          - target: linux-x64
+            runner: ubuntu-22.04
+            architecture: x64
+          - target: linux-arm64
+            runner: ubuntu-22.04-arm
+            architecture: arm64
+          - target: macos-x64
+            runner: macos-15-intel
+            architecture: x64
+          - target: macos-arm64
+            runner: macos-14
+            architecture: arm64
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          architecture: ${{ matrix.architecture }}
+      - name: Install the pinned native wheel dependencies
+        run: >-
+          python -m pip install --require-hashes --only-binary=:all: -r requirements-build.lock
+      - name: Test source with synthetic wallets
+        env:
+          PYTHONPATH: src
+        run: |
+          python -m unittest discover -s tests -v
+          python -m pirate_wallet_lite_recovery --self-test
+      - name: Test tag validation and signing with temporary fixtures
+        if: matrix.target == 'linux-x64'
+        run: |
+          python scripts/test_release_validation.py
+          python scripts/test_signing.py
+      - name: Build and test the extracted native package
+        run: python scripts/build_release.py --target '${{ matrix.target }}'
+      - name: Save only the package archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: native-${{ matrix.target }}
+          path: release/*
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  sign:
+    name: Sign and verify complete release
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: [validate-release, build]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    environment: release-signing
+    steps:
+      # The signer is checked out from the immutable default-branch commit validated
+      # by the gate, never from arbitrary tag code. No dependency installation here.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.validate-release.outputs.trusted_sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            scripts
+            release-signing
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: native-*
+          path: unsigned
+          merge-multiple: true
+      - name: Sign packages and checksums in a temporary GPG keyring
+        env:
+          LINUX_GPG_PRIVATE_KEY_B64: ${{ secrets.LINUX_GPG_PRIVATE_KEY_B64 }}
+          LINUX_GPG_PASSPHRASE: ${{ secrets.LINUX_GPG_PASSPHRASE }}
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
+        run: python scripts/sign_release.py --input unsigned --output signed --version "$RELEASE_VERSION" --public-key release-signing/public_key.asc
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: signed-release
+          path: signed/*
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  draft-release:
+    name: Prepare draft release for review
+    needs: [validate-release, sign]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.validate-release.outputs.trusted_sha }}
+          persist-credentials: false
+          sparse-checkout: release-signing
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: signed-release
+          path: release-assets
+      - name: Create draft with verified tag and signed assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.validate-release.outputs.tag }}
+        run: >-
+          gh release create "$RELEASE_TAG" release-assets/* --draft --verify-tag
+          --title "Pirate Wallet Lite Recovery $RELEASE_TAG"
+          --notes-file release-signing/RELEASE-NOTES.md
