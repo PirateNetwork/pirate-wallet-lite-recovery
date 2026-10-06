@@ -17,6 +17,8 @@ import tempfile
 import tomllib
 import zipfile
 
+from sign_release import validate_archive
+
 
 ROOT = Path(__file__).resolve().parents[1]
 APP = "pirate-wallet-lite-recovery"
@@ -177,6 +179,8 @@ def main() -> int:
         (stage / "BUILD-INFO.json").write_text(json.dumps(build_info, indent=2) + "\n", encoding="utf-8")
         temporary_archive = work / package.name
         make_archive(stage, temporary_archive, windows)
+        validate_archive(temporary_archive, version, args.target,
+                         (ROOT / "release-signing" / "public_key.asc").read_bytes())
         extracted = work / "extracted"
         extracted.mkdir()
         if windows:
