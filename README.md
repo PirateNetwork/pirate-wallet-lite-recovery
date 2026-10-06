@@ -81,7 +81,7 @@ Your working copy is now at `~/Pirate Recovery/arrr-light-wallet.dat`.
 
 Search the computer and your own backup drives for `arrr-light-wallet.dat`. If you followed the old wallet reset instructions, also look for `arrr-light-wallet-old.dat`. Search old user profiles as well as the current one. Keep each candidate as a separate copy; do not combine files or replace one with another. You can recover a renamed backup by entering its actual filename instead of `arrr-light-wallet.dat` in the recovery command.
 
-For an Android wallet, use an existing backup or an export provided by the original application. This program runs on a desktop computer. Keep the phone, application, and original backup intact. Do not uninstall the application, clear its storage, root the phone, or upload its files to a recovery website.
+For an Android Skull Island wallet, follow [Export Skull Island files from Android](#export-skull-island-files-from-android). The recovery program runs on a desktop computer. Keep the mobile device, application, and original backup intact. Do not uninstall the application, clear its storage, root the device, or upload its files to a recovery website.
 
 ## Find and copy a Skull Island backup
 
@@ -90,7 +90,7 @@ Skull Island has two different files that may be useful:
 - `zero_wallet.json` stores the encrypted seed phrase in application settings. It can recover the seed phrase, but not independently imported keys.
 - `arrr-wallet.dat` is the native Pirate wallet file. Its supported seed and key records use the same binary format as Pirate Wallet Lite.
 
-The verified Android source stores these files in the application's private data directories. They are not ordinary files in Android's Downloads folder and may not be accessible through the phone's file manager. Use an existing backup or a backup method already provided by the original application.
+On Android, these files are in the application's private storage, not the Downloads folder. Connecting a USB cable does not make them visible in the computer's file manager. Use an existing backup first, or follow the Android export instructions below.
 
 1. Look for an existing backup or export that you already saved from Skull Island. Search your own computer and backup drives for `zero_wallet.json` and `arrr-wallet.dat`.
 2. Keep the original phone, application, and all existing backups intact. Do not uninstall Skull Island or clear its application data while looking for a backup.
@@ -99,7 +99,7 @@ The verified Android source stores these files in the application's private data
 5. Follow the download and extraction steps for your computer below.
 6. Use one of the commands in [Run recovery for a Skull Island backup](#run-recovery-for-a-skull-island-backup), rather than the Lite filename in the main examples.
 
-If you have no file backup, keep the device intact and seek help through an established PirateNetwork channel about the original application's available backup methods. Do not give anyone the password, wallet file, seed phrase, or remote access to the device.
+If the export method below is unavailable, keep the device intact and seek help through an established PirateNetwork channel about the original application's available backup methods. Do not give anyone the password, wallet file, seed phrase, or remote access to the device.
 
 ## Download the correct release
 
@@ -325,7 +325,7 @@ Use the key's details when comparing addresses. The main **Receive** screen may 
 
 A Sapling viewing key begins with `zxviews1`. It can reveal supported activity within its key scope, but it cannot spend funds.
 
-To monitor it in Stashi, select **View only** during setup, enter a wallet name, put the key in the **Sapling** viewing-key field, and choose a birthday height before its first transaction. You can also use **Settings > Keys & addresses > Viewing Key**. Wait for the scan to finish.
+To monitor it in Stashi, select **View only** during setup, enter a wallet name, put the key in the **Sapling** viewing-key field, and choose a birthday height before its first transaction. If you do not know the height, enter **1**. You can also use **Settings > Keys & addresses > Viewing Key**. Wait for the scan to finish.
 
 If the old file only contains a viewing key, this program cannot turn it into a spending key. Find the original seed phrase, spending-key backup, or wallet that holds spending authority.
 
@@ -348,6 +348,151 @@ Keep the original wallet and backups after migration. Do not delete them because
 | Native program does not start | Check the operating system, processor, and release baseline. Use the correct archive or the documented source installation on a supported Python environment. |
 
 When reporting a problem, give the operating system, release version, original wallet application, and the non-secret error message. Do not include the wallet, password, seed phrase, spending key, viewing key, terminal screenshot, or process dump. See [SECURITY.md](SECURITY.md).
+
+## Export Skull Island files from Android
+
+These steps use Google's Android Debug Bridge (ADB) to make a local backup, then Android Backup Extractor to obtain the wallet files. They do not reset the wallet or restore data to the mobile device.
+
+This method may work on Android 11 or older, or with an older Skull Island installation on a newer device if backups are allowed. It is not available on every device. On Android 12 or newer, applications targeting Android 12 or newer normally exclude their private data from ADB backups. Current Skull Island source targets that version. See [Android's backup restriction](https://developer.android.com/about/versions/12/behavior-changes-12#adb-backup-restrictions).
+
+An ADB backup can finish without containing the wallet files. Check its contents as described below. USB debugging, `adb pull`, and computer administrator access do not bypass Android's private application storage. Do not uninstall Skull Island, replace its installation, unlock the bootloader, or clear its storage to try to gain access.
+
+### Prepare the computer and mobile device
+
+1. Download [Google's SDK Platform Tools](https://developer.android.com/tools/releases/platform-tools) for your computer. Extract the ZIP into **Downloads** so that it contains a folder named `platform-tools`. You do not need Android Studio.
+2. Install Java 11 or newer if needed, using the [Eclipse Temurin installation instructions](https://adoptium.net/installation/) for your operating system.
+3. Open the [Android Backup Extractor releases](https://github.com/nelenkov/android-backup-extractor/releases/latest). Download the release asset whose name begins with `abe` and ends with `.jar`, not the source archive. Save it in **Downloads** and rename it to `abe.jar`, keeping the `.jar` extension.
+4. Download the recovery program for your computer using [Download the correct release](#download-the-correct-release). Finish these downloads before disconnecting from the internet.
+5. Close Skull Island. On the mobile device, open **Settings > About phone** or **About device** and find **Build number**; some manufacturers place it under **Software information**. Tap it seven times and enter the device PIN if requested. Open **Developer options** and enable **USB debugging**. Menu locations vary; see [Google's USB debugging instructions](https://developer.android.com/tools/adb#Enabling).
+6. Connect the unlocked mobile device to the computer with a USB cable that supports data. Accept **Allow USB debugging** on the mobile device only for your trusted computer. Disconnect other Android devices from the computer.
+7. Disconnect the computer from the internet. Put the mobile device in flight mode and turn off Wi-Fi. Keep USB connected, and stop screen sharing and recording.
+
+### Check the connection and installed application
+
+Open a normal PowerShell window on Windows, or Terminal on Linux or macOS. Enter these commands one at a time.
+
+Windows PowerShell:
+
+```powershell
+Set-Location -LiteralPath "$env:USERPROFILE\Downloads\platform-tools"
+.\adb.exe devices
+.\adb.exe shell pm list packages pirate
+.\adb.exe shell getprop ro.build.version.release
+```
+
+Linux or macOS Terminal:
+
+```sh
+cd "$HOME/Downloads/platform-tools"
+./adb devices
+./adb shell pm list packages pirate
+./adb shell getprop ro.build.version.release
+```
+
+The device must appear with the status `device`. If it says `unauthorized`, unlock the mobile device and accept the USB debugging prompt. If no device appears, check the cable and [Google's device connection instructions](https://developer.android.com/studio/run/device); Windows may need the manufacturer's USB driver. Stop until the connection works.
+
+The package list identifies which Skull Island application is installed:
+
+| Listed package | Skull Island installation |
+|---|---|
+| `pirate.sapling.litewallet` | Newer versions |
+| `skullisland.pirate.mobilewallet` | Older versions |
+
+The final command prints the Android version. If neither package is listed, stop and check that you are using the right mobile device and Android user profile. If both are listed, back up each separately in a different export folder.
+
+Keep this terminal open. Set the package name to the value actually listed. These examples use `pirate.sapling.litewallet`; change that value to `skullisland.pirate.mobilewallet` if that is your installed package.
+
+Windows PowerShell:
+
+```powershell
+$skullPackage = "pirate.sapling.litewallet"
+```
+
+Linux or macOS Terminal:
+
+```sh
+skullPackage="pirate.sapling.litewallet"
+```
+
+### Make a local backup
+
+1. Create a new local export folder and request a backup of only the selected application. Enter each command separately. Stop if a command fails. If the folder already exists, use a different folder name in the first command so that you do not overwrite an earlier backup.
+
+Windows PowerShell:
+
+```powershell
+$skullExport = "$env:USERPROFILE\Pirate Recovery\Skull Island Export"
+New-Item -ItemType Directory -Path $skullExport -ErrorAction Stop
+.\adb.exe backup -f "$skullExport\skull-island.ab" -noapk -noobb -noshared -nowidgets $skullPackage
+```
+
+Linux or macOS Terminal:
+
+```sh
+skullExport="$HOME/Pirate Recovery/Skull Island Export"
+mkdir -p "$HOME/Pirate Recovery"
+mkdir "$skullExport"
+./adb backup -f "$skullExport/skull-island.ab" -noapk -noobb -noshared -nowidgets "$skullPackage"
+```
+
+2. Unlock the mobile device and approve the backup when asked. If it asks for an existing Android backup password, enter that password. Set a backup-encryption password if offered, and keep it privately. For a newly chosen backup password, use English letters, digits, or ASCII punctuation because the extractor has limitations with non-ASCII passwords. This protects the `.ab` backup and is separate from the Skull Island wallet password; do not change the wallet password.
+3. Wait for the backup to finish and the terminal prompt to return. A deprecation warning can appear because ADB backup is an older Android feature. If the command is unsupported, no confirmation appears, or the device refuses the backup, stop and keep the original installation intact.
+4. Using the computer's file manager, copy `abe.jar` from **Downloads** into the new `Skull Island Export` folder. Keep `skull-island.ab` as the original exported backup. Do not upload it to an online extractor.
+
+### Extract and check the wallet files
+
+1. In the same terminal, enter the export folder and unpack the backup. Run each command separately and stop if it fails.
+
+Windows PowerShell:
+
+```powershell
+Set-Location -LiteralPath $skullExport
+java -version
+java -jar ".\abe.jar" unpack ".\skull-island.ab" ".\skull-island.tar"
+tar -tf ".\skull-island.tar"
+```
+
+Linux or macOS Terminal:
+
+```sh
+cd "$skullExport"
+java -version
+java -jar "./abe.jar" unpack "./skull-island.ab" "./skull-island.tar"
+tar -tf "./skull-island.tar"
+```
+
+If `java` is not found, complete the Java installation and reopen the terminal before trying again. Re-enter the package-name and export-folder assignments from the previous steps; a new terminal does not retain them. For an encrypted backup, the extractor asks for its password with typing hidden. Enter the Android backup-encryption password, not the wallet password. Run it directly in a normal terminal, without piping or redirection. Stop if unpacking reports an error; do not continue with an incomplete TAR file.
+
+2. In the file list, look for these entries, using your selected package name in place of `PACKAGE`:
+
+```text
+apps/PACKAGE/f/zero_wallet.json
+apps/PACKAGE/f/arrr-wallet.dat
+```
+
+If neither entry is present, no supported wallet file was exported. A non-empty `.ab` file does not prove otherwise. Keep the device and backup intact and seek help through an established PirateNetwork channel. On Android 12 or newer, the backup restriction described above may be the reason.
+
+3. Extract only the entries that are present. The following commands assume both wallet files were listed. If only one was listed, remove the missing file's quoted path from the `tar` command.
+
+Windows PowerShell:
+
+```powershell
+New-Item -ItemType Directory -Path ".\extracted" -ErrorAction Stop
+tar -xf ".\skull-island.tar" -C ".\extracted" "apps/$skullPackage/f/zero_wallet.json" "apps/$skullPackage/f/arrr-wallet.dat"
+```
+
+Linux or macOS Terminal:
+
+```sh
+mkdir "extracted"
+tar -xf "./skull-island.tar" -C "./extracted" "apps/$skullPackage/f/zero_wallet.json" "apps/$skullPackage/f/arrr-wallet.dat"
+```
+
+4. In the file manager, open `Skull Island Export/extracted/apps`, open the folder matching your package name, and then open `f`. Copy the wallet files into the parent `Pirate Recovery` folder. Keep both files if both are present. Do not replace existing backups; use another local working folder and adjust the recovery command's path if necessary.
+5. Turn off **USB debugging** on the mobile device and disconnect the USB cable. Keep the device and original application intact.
+6. Continue with [Run recovery for a Skull Island backup](#run-recovery-for-a-skull-island-backup), after extracting the recovery program using the steps for your computer.
+
+The TAR file has had Android backup encryption removed. Protect it and the extracted files like wallet backups, even if the wallet files have their own encryption. Keep them in local storage that is not synchronised to a cloud service. The recovery program reads JSON or DAT wallet files; it does not read the `.ab` or `.tar` backup directly.
 
 ## Source and release preparation
 
