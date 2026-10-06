@@ -11,8 +11,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: native-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+  # Give release pushes separate groups: even pending main runs must not be
+  # replaced when another push arrives. Other branches/PRs keep latest-run wins.
+  group: native-${{ github.workflow }}-${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref_type == 'tag') && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' || (github.ref != 'refs/heads/main' && github.ref_type != 'tag') }}
 
 env:
   PYTHON_VERSION: '3.13.16'
@@ -20,13 +22,15 @@ env:
 
 jobs:
   validate-release:
-    if: github.event_name == 'push' && github.ref_type == 'tag'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref_type == 'tag')
     runs-on: ubuntu-22.04
     timeout-minutes: 5
     outputs:
       version: ${{ steps.validate.outputs.version }}
       tag: ${{ steps.validate.outputs.tag }}
+      source_sha: ${{ steps.validate.outputs.source_sha }}
       trusted_sha: ${{ steps.validate.outputs.trusted_sha }}
+      mode: ${{ steps.validate.outputs.mode }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -36,13 +40,19 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      - name: Require matching version and a commit on the default branch
+      - name: Validate main push or matching version tag
         id: validate
         env:
           RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REF: ${{ github.ref }}
           RELEASE_SHA: ${{ github.sha }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-        run: python scripts/validate_release.py --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --default-branch "$DEFAULT_BRANCH"
+        run: |
+          if [ "$RELEASE_REF" = 'refs/heads/main' ]; then
+            python scripts/validate_release.py --mode main-push --ref "$RELEASE_REF" --sha "$RELEASE_SHA" --default-branch "$DEFAULT_BRANCH"
+          else
+            python scripts/validate_release.py --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --default-branch "$DEFAULT_BRANCH"
+          fi
 
   build:
     name: Test and package (${{ matrix.target }})
@@ -73,6 +83,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -87,7 +98,7 @@ jobs:
         run: |
           python -m unittest discover -s tests -v
           python -m pirate_wallet_lite_recovery --self-test
-      - name: Test tag validation and signing with temporary fixtures
+      - name: Test release validation and signing with temporary fixtures
         if: matrix.target == 'linux-x64'
         run: |
           python scripts/test_release_validation.py
@@ -105,7 +116,7 @@ jobs:
 
   sign:
     name: Sign and verify complete release
-    if: github.event_name == 'push' && github.ref_type == 'tag'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref_type == 'tag')
     needs: [validate-release, build]
     runs-on: ubuntu-22.04
     timeout-minutes: 10
@@ -142,8 +153,8 @@ jobs:
           retention-days: 7
           compression-level: 0
 
-  draft-release:
-    name: Prepare draft release for review
+  publish-release:
+    name: Publish main prerelease or prepare stable draft
     needs: [validate-release, sign]
     runs-on: ubuntu-22.04
     timeout-minutes: 5
@@ -159,11 +170,39 @@ jobs:
         with:
           name: signed-release
           path: release-assets
-      - name: Create draft with verified tag and signed assets
+      - name: Create release with verified commit and signed assets
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ needs.validate-release.outputs.tag }}
-        run: >-
-          gh release create "$RELEASE_TAG" release-assets/* --draft --verify-tag
-          --title "Pirate Wallet Lite Recovery $RELEASE_TAG"
-          --notes-file release-signing/RELEASE-NOTES.md
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
+          RELEASE_SHA: ${{ needs.validate-release.outputs.source_sha }}
+          RELEASE_MODE: ${{ needs.validate-release.outputs.mode }}
+        run: |
+          if [ "$RELEASE_MODE" = 'main-push' ]; then
+            # Create the immutable per-commit tag at the built SHA, never the
+            # current branch tip. A retry may reuse that exact tag, not move it.
+            if tag_sha=$(gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" --jq '.object.sha' 2>/dev/null); then
+              if [ "$tag_sha" != "$RELEASE_SHA" ]; then
+                echo 'Release tag already exists at a different commit.' >&2
+                exit 1
+              fi
+            else
+              gh api --method POST "repos/$GH_REPO/git/refs" \
+                -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$RELEASE_SHA" --silent
+            fi
+            {
+              printf 'Automatic signed prerelease from main.\n\nVersion: `%s`\n\nSource commit: `%s`\n\n' "$RELEASE_VERSION" "$RELEASE_SHA"
+              cat release-signing/RELEASE-NOTES.md
+            } > release-notes.md
+            # gh uploads assets in a draft before automatically publishing it.
+            # Existing releases are never overwritten or deleted on a rerun.
+            gh release create "$RELEASE_TAG" release-assets/* --verify-tag \
+              --target "$RELEASE_SHA" --prerelease --latest=false \
+              --title "Pirate Wallet Lite Recovery $RELEASE_TAG" \
+              --notes-file release-notes.md
+          else
+            gh release create "$RELEASE_TAG" release-assets/* --draft --verify-tag \
+              --title "Pirate Wallet Lite Recovery $RELEASE_TAG" \
+              --notes-file release-signing/RELEASE-NOTES.md
+          fi
