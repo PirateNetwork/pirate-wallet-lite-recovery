@@ -54,6 +54,21 @@ def locked_packages(path: Path, seen: set[Path] | None = None) -> set[str]:
     return names
 
 
+def is_license_document(entry: Path, declared: set[str]) -> bool:
+    if (any(part.lower() == "__pycache__" for part in entry.parts) or
+            entry.suffix.lower() in {".py", ".pyi", ".pyc", ".pyo", ".pyd", ".so", ".dll"}):
+        return False
+    if entry.name.lower().startswith(("license", "licence", "copying", "notice", "authors")):
+        return True
+    # Declared legal files live under metadata directories, not Python modules
+    # such as packaging/licenses. Older wheels omit the licenses/ subdirectory.
+    for index, part in enumerate(entry.parts):
+        if part.endswith(".dist-info"):
+            relative = "/".join(entry.parts[index + 1:])
+            return relative in declared or relative.removeprefix("licenses/") in declared
+    return False
+
+
 def collect_licenses(destination: Path) -> None:
     destination.mkdir()
     records = []
@@ -65,10 +80,10 @@ def collect_licenses(destination: Path) -> None:
         package_dir = destination / f"{name}-{distribution.version}"
         package_dir.mkdir()
         copied = []
+        declared = set(distribution.metadata.get_all("License-File", []))
         for entry in distribution.files or []:
             parts = entry.parts
-            filename = entry.name.lower()
-            if not (filename.startswith(("license", "copying", "notice", "authors")) or "licenses" in parts):
+            if not is_license_document(entry, declared):
                 continue
             source = Path(distribution.locate_file(entry))
             if not source.is_file() or source.is_symlink():
