@@ -54,8 +54,4 @@ Only release maintainers need signing-key material. Follow the [release-signing 
 
 ## Reporting a security problem
 
-Use [GitHub private vulnerability reporting](https://github.com/PirateNetwork/pirate-wallet-lite-recovery/security/advisories/new) if the repository has it enabled. If that option is unavailable, contact a PirateNetwork maintainer through an established private channel and ask how to send a report. Do not post an exploitable security issue or confidential recovery information publicly.
-
-Include the affected release or source commit, operating system, a description of the problem, and reproduction steps using invented test data. State whether the issue affects secret disclosure, wallet parsing, release verification, or another part of the program. A synthetic fixture is suitable; a real wallet backup is not.
-
-For an ordinary recovery error, a public issue can contain the version, original wallet application, operating system, and the exact non-secret diagnostic. Remove private paths, usernames, addresses, and any recovered information. Maintainers should reproduce issues with synthetic data and must not ask users to share their secrets.
+Report security problems to [dev@piratechainfoundation.com](mailto:dev@piratechainfoundation.com).
