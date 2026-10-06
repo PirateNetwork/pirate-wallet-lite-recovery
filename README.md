@@ -103,7 +103,7 @@ If the export method below is unavailable, keep the device intact and seek help 
 
 ## Download the correct release
 
-Open the [Pirate Wallet Lite Recovery releases](https://github.com/PirateNetwork/pirate-wallet-lite-recovery/releases) and select `v1.0.0`. Download the archive for your computer and save it in your **Downloads** folder. Check that your browser has not added a suffix such as `(1)` to the filename.
+Open the [Pirate Wallet Lite Recovery releases](https://github.com/PirateNetwork/pirate-wallet-lite-recovery/releases) and select a release for version 1.0.0. A tag such as `v1.0.0` identifies a stable release; a commit-suffixed tag such as `v1.0.0-a1b2c3d4e5f6` identifies an automatic prerelease. Download the archive for your computer and save it in your **Downloads** folder. Check that your browser has not added a suffix such as `(1)` to the filename.
 
 Signature and checksum verification is optional. If you want to verify the download before running it, follow [Optional download verification](#optional-download-verification) at the end of this guide.
 

@@ -103,6 +103,10 @@ directory with that basename, holding the executable, `README.md`, `SECURITY.md`
 `LICENSE`, `public_key.asc`, `BUILD-INFO.json`, `THIRD_PARTY_LICENSES/`, and this
 document at `release-signing/README.md`.
 
+Automatic prereleases keep this declared-version archive naming scheme. The
+commit suffix appears in the release tag, not in the archive filenames;
+`BUILD-INFO.json` records the exact source commit for each package.
+
 The package contains license text and metadata for the pinned installed
 dependencies and the bundled Python interpreter. Build metadata records the
 target, interpreter, PyInstaller version, runtime dependency versions, source
@@ -111,23 +115,32 @@ not claimed to be bit-for-bit reproducible.
 
 ## Configure the protected signing environment
 
-Do this in the new repository before pushing any release tag. No private key is
+Do this in the new repository before the first push to `main` that should publish
+a prerelease, or before pushing a stable release tag. No private key is
 stored in this repository or copied from another local project.
 
 1. In GitHub repository **Settings → Environments**, create `release-signing`.
-2. Add required reviewers, enable **Prevent self-review** where practical, and
-   disable administrator bypass of protection rules. A reviewer must inspect the
-   triggering tag and workflow before allowing secret access.
+2. For fully automatic publication after successful `main` pushes, do not add
+   required reviewers to this environment. Required reviewers may be retained if
+   signing approval is desired, but every release will wait for that approval.
+   If approval is enabled, use **Prevent self-review** where practical and disable
+   administrator bypass of protection rules.
 3. Under deployment restrictions select **Selected branches and tags**, then add
-   a **Tag** rule for `v*`. Keep the default branch and release tags protected with
-   repository rulesets, restrict who can create/update release tags, and require
-   reviews for changes to workflows and signing scripts.
+   a **Branch** rule for `main` and a **Tag** rule for `v*`. Protect `main` and
+   release tags with repository rulesets, restrict who can create/update release
+   tags, and require reviews for changes to workflows and signing scripts. Keep
+   `main` as the repository's default branch.
 4. Add these two **environment secrets**, using the same existing release-signing
    identity as Stashi:
 
    - `LINUX_GPG_PRIVATE_KEY_B64`: base64 of an exported, passphrase-protected signing
      private key. The imported key must have the expected primary fingerprint.
    - `LINUX_GPG_PASSPHRASE`: its passphrase, without newline characters.
+
+If a tag ruleset restricts creation, allow the authorised GitHub Actions release
+job to create new commit-suffixed tags. The publisher uses the repository's
+`GITHUB_TOKEN` and never moves an existing tag. A rule that blocks that token from
+creating tags will also block automatic publication.
 
 Use the existing secure key backup and existing secret values. Do not paste them
 into a terminal command, issue, chat, workflow file, or build log. Base64 is an
@@ -149,21 +162,40 @@ channel; importing a key from the same download alone does not establish identit
 
 ## Release flow
 
-Merge the reviewed source and workflow onto the repository's protected default
-branch. Update `project.version` and the package version together, and create the
-matching tag, such as `v1.0.0`, on that reviewed commit. A release tag must use
-exactly `v` plus three numeric version components. The gate loads its verifier
-from the default branch, requires that checkout to match the remote default
-branch, and checks the tag and event SHA. It reads project version and package
-`__version__` from Git blobs at the tag, without executing tag code, requires both
-to match the tag, and checks that the commit is in the default branch's history.
+### Automatic prereleases from main
 
-Every push and pull request runs native source tests and builds/tests all five
-packages. Manual runs also build packages, but only a pushed version tag can enter
-the signing path. The separate signing job waits for all five successful builds
-and the tag gate. It checks out the signing script and public key from the
-immutable default-branch commit identified by the gate, without installing
-dependencies or executing the packaged programs after secrets are available.
+Every successful push to `main` tests, builds, and tests all five native packages,
+then signs the complete set and creates a public GitHub **prerelease**. Its tag is
+`v<version>-<first-12-commit-characters>`, for example
+`v1.0.0-a1b2c3d4e5f6`, and points to the exact event commit used to build the
+packages. These are separate, immutable releases for individual commits, not a
+rolling tag that is moved to newer code. Rapid pushes do not cancel an earlier
+`main` release run.
+
+The gate requires matching `project.version` and package `__version__` values and
+checks that the event commit is in `main`'s history. It reads the versions from
+Git blobs without executing the release source. A version bump is not needed for
+each push: commits sharing version 1.0.0 receive different commit-suffixed tags.
+Change both version declarations together when changing the declared version.
+The generated prerelease notes identify its version and full source commit.
+
+### Stable releases from version tags
+
+After reviewing a release candidate, create a matching tag such as `v1.0.0` on a
+reviewed commit in `main`'s history. A stable release tag must use exactly `v` plus
+three numeric version components. The gate checks the tag and event SHA and
+requires both version declarations to match the tag. The workflow signs the
+packages and creates a **draft** stable GitHub release. Review the draft and build
+results before publishing it.
+
+Pull requests, pushes to other branches, and manual runs test and build packages
+only; they do not sign or publish releases. Signing waits for the appropriate
+release gate and all five successful build/test jobs. The gate loads its verifier
+from the default branch, verifies that checkout against the remote default branch,
+and identifies an immutable trusted commit for the signing job. The signing job
+checks out the signing script and public key from that trusted commit, without
+installing dependencies or executing the packaged programs after secrets are
+available.
 
 The signer requires exactly the five expected archives, checks each archive's
 allowed file layout, version, target, successful self-test marker, and bundled
@@ -184,11 +216,12 @@ each, `SHA256SUMS`, detached `SHA256SUMS.asc`, and `public_key.asc`. The signed
 checksum manifest includes the five archive hashes and the public key hash. Only
 these public assets are uploaded from the signing job.
 
-A final job with `contents: write` creates a **draft** GitHub release. The signing
-job has read-only repository permissions, and build/PR jobs have no signing
-secrets. The maintainer reviews the draft, build results, signatures, and checksums
-before publishing it. Existing releases are not replaced automatically; creating
-an already existing release tag fails and requires maintainer review.
+A final job with `contents: write` publishes the commit-specific prerelease for
+a `main` push, or prepares the stable draft for a version-tag push. It runs only
+after tests, builds, and signing succeed. The signing job has read-only repository
+permissions, and build/PR jobs have no signing secrets. Existing releases and tags
+are not replaced automatically; a collision requires maintainer review rather
+than overwriting public assets.
 
 ## Signing tests and download verification
 
@@ -198,11 +231,12 @@ missing secrets, wrong fingerprint, wrong passphrase, unexpected wallet files,
 wallet/secret files nested under licenses, oversized metadata, and incomplete
 releases. It never opens the user's default GPG keyring and never
 uses the real release signer. CI runs this test on Linux x64.
-`python scripts/test_release_validation.py` separately checks valid tags, version
-and event mismatches, and commits outside the default branch in disposable local
-repositories. Fixture commits explicitly disable GPG signing.
+`python scripts/test_release_validation.py` separately checks release gates,
+version and event mismatches, and commits outside the permitted branch history in
+disposable local repositories. Fixture commits explicitly disable GPG signing.
 
-Before extracting a downloaded archive:
+Download verification is optional, as described at the end of the root README.
+If choosing to verify a downloaded archive, do it before extraction:
 
 ```text
 gpg --import public_key.asc
@@ -211,9 +245,10 @@ gpg --verify SHA256SUMS.asc SHA256SUMS
 gpg --verify <archive>.asc <archive>
 ```
 
-Check the displayed fingerprint independently and require a valid signature.
-Compare the archive's SHA-256 hash against the verified manifest. The root README
-has platform-specific download, hash, extraction, and launch instructions.
+Check the displayed fingerprint independently and require a valid signature for
+verification to succeed. Compare the archive's SHA-256 hash against the verified
+manifest. The root README has platform-specific download, optional verification,
+extraction, and launch instructions.
 
 ## Verified upstream references
 
