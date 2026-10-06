@@ -1,0 +1,12 @@
+{
+	"settings": {
+		"currentCoin": "pirate",
+		"explorerURL": "https://explorer.pirate.black/",
+		"language": "English",
+		"currency": "USD",
+		"minimumBlock": {"pirate": 0},
+		"password": "5cca7720aff812a0661d96ad26f21a4b05f4ff49e47c2286d767fef2a3e261dea9a15551bc4b9109d54b4b6e029eaaae5834c79eb2bb58f5f2817726127a8468",
+		"passPhrase": "48c7cc72a56f63dda09aba3fe2acca825473c1e1d020787fce4e7f77e80bc750608269cd2540529fbb42da1ded0e5333de9e7aa5d4200ab194bf444557bc2652c74fc0cab6751a90e04323beab182b1efbd4861156e3bdc7808ce961bc37e73355264ef9e15eddd414f16524c868f04da80b69c124ae4550ac642c02c80b2c41cbdd8c931dd81f2f6634bab9d6129636f7e38552d3e52ebcd4d3705249e9b75b2fb1ff8f591e5e85936f84f4a0e364d9d0efb6616c4e21b4becc179505481976",
+		"saveData": true
+	}
+}
