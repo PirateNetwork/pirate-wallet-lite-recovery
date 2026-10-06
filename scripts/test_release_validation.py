@@ -1,0 +1,106 @@
+"""Test release-tag gates in temporary repositories with no remote or user key."""
+
+from __future__ import annotations
+
+import contextlib
+import io
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+import validate_release
+
+
+class ReleaseValidationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory(prefix="pirate-recovery-tag-test-")
+        self.root = Path(self.temporary.name)
+        (self.root / "src" / "pirate_wallet_lite_recovery").mkdir(parents=True)
+        (self.root / "pyproject.toml").write_text('[project]\nversion = "1.0.0"\n', encoding="utf-8")
+        (self.root / "src" / "pirate_wallet_lite_recovery" / "__init__.py").write_text('__version__ = "1.0.0"\n', encoding="utf-8")
+        self.git("init", "--initial-branch=main")
+        self.git("add", ".")
+        self.commit("Synthetic release fixture")
+        self.sha = self.git("rev-parse", "HEAD")
+        self.git("update-ref", "refs/remotes/origin/main", self.sha)
+        self.git("tag", "v1.0.0")
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def git(self, *args: str) -> str:
+        result = subprocess.run(["git", *args], cwd=self.root, text=True, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, check=True)
+        return result.stdout.strip()
+
+    def commit(self, message: str) -> None:
+        # Explicitly disable commit signing: these are disposable fixtures.
+        self.git("-c", "commit.gpgsign=false", "-c", "user.name=Recovery CI Test",
+                 "-c", "user.email=ci@example.invalid", "commit", "-m", message)
+
+    def validate(self, *, tag: str = "v1.0.0", sha: str | None = None) -> int:
+        arguments = ["validate_release.py", "--tag", tag, "--sha", sha or self.sha,
+                     "--default-branch", "main"]
+        with patch.object(validate_release, "ROOT", self.root), patch.object(sys, "argv", arguments), \
+                patch.dict(os.environ, {"GITHUB_OUTPUT": str(self.root / "outputs")}), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            return validate_release.main()
+
+    def test_matching_tag_on_default_branch_is_accepted(self) -> None:
+        self.assertEqual(self.validate(), 0)
+        outputs = (self.root / "outputs").read_text(encoding="utf-8")
+        self.assertIn(f"trusted_sha={self.sha}\n", outputs)
+        self.assertIn("version=1.0.0\ntag=v1.0.0\n", outputs)
+
+    def test_wrong_tag_version_is_refused(self) -> None:
+        self.git("tag", "v1.0.1")
+        with self.assertRaises(SystemExit):
+            self.validate(tag="v1.0.1")
+
+    def test_mismatched_event_sha_is_refused(self) -> None:
+        with self.assertRaises(SystemExit):
+            self.validate(sha="0" * 40)
+
+    def test_package_version_mismatch_is_refused(self) -> None:
+        (self.root / "src" / "pirate_wallet_lite_recovery" / "__init__.py").write_text('__version__ = "2.0.0"\n', encoding="utf-8")
+        self.git("add", ".")
+        self.commit("Synthetic package version mismatch")
+        mismatch_sha = self.git("rev-parse", "HEAD")
+        self.git("tag", "-f", "v1.0.0", mismatch_sha)
+        self.git("update-ref", "refs/remotes/origin/main", mismatch_sha)
+        with self.assertRaises(SystemExit):
+            self.validate(sha=mismatch_sha)
+
+    def test_tag_outside_default_branch_is_refused(self) -> None:
+        (self.root / "extra.txt").write_text("Synthetic branch-only content\n", encoding="utf-8")
+        self.git("add", ".")
+        self.commit("Synthetic unmerged fixture")
+        unmerged = self.git("rev-parse", "HEAD")
+        self.git("tag", "-f", "v1.0.0", unmerged)
+        self.git("switch", "--detach", self.sha)
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.validate(sha=unmerged)
+
+    def test_old_reviewed_tag_uses_trusted_default_branch_validator(self) -> None:
+        (self.root / "later.txt").write_text("Synthetic later default-branch commit\n", encoding="utf-8")
+        self.git("add", ".")
+        self.commit("Synthetic later default branch")
+        trusted_sha = self.git("rev-parse", "HEAD")
+        self.git("update-ref", "refs/remotes/origin/main", trusted_sha)
+        self.assertEqual(self.validate(), 0)
+        self.assertIn(f"trusted_sha={trusted_sha}\n", (self.root / "outputs").read_text(encoding="utf-8"))
+
+    def test_untrusted_validator_checkout_is_refused(self) -> None:
+        (self.root / "untrusted.txt").write_text("Synthetic untrusted checkout\n", encoding="utf-8")
+        self.git("add", ".")
+        self.commit("Synthetic untrusted checkout")
+        with self.assertRaises(SystemExit):
+            self.validate()
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
