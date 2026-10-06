@@ -644,10 +644,4 @@ E4FB 2399 AECC F9B9 447D ED47 2CE6 5343 4015 53A6
 
 Without spaces: `E4FB2399AECCF9B9447DED472CE65343401553A6`.
 
-Compare the entire fingerprint, rather than just the final key ID or the signer's name. Confirm it through a PirateNetwork source you already trust; a public key downloaded beside an archive does not establish who owns that key by itself.
-
 Both verification commands must report **Good signature** from the expected key. A signing subkey may have a different fingerprint; its primary key must be the fingerprint above. GnuPG may warn that the key is not certified with a trusted signature. That trust warning is different from a bad signature and does not replace checking the full fingerprint. See the [GnuPG verification documentation](https://www.gnupg.org/documentation/manuals/gnupg/GPG-Examples.html).
-
-Stop if verification reports a bad signature, an unexpected signer, a missing public key, a revoked key, an expired key, or an expired signature. Check the release notes and obtain the correct files through the official release page before proceeding.
-
-A PGP signature proves that the holder of the signing key signed those bytes. It does not prove that the software has no defects. PGP signing is separate from Windows Authenticode and Apple signing or notarisation. Windows or macOS may still display a warning for a PGP-verified download.
