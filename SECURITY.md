@@ -38,7 +38,7 @@ Tests and source review are not an independent security audit. This project make
 
 ## Release verification
 
-Download native archives from the [official repository releases](https://github.com/PirateNetwork/pirate-wallet-lite-recovery/releases). Verify the detached PGP signatures and the checksum before running the program, as described in [README.md](README.md).
+Download native archives from the [official repository releases](https://github.com/PirateNetwork/pirate-wallet-lite-recovery/releases). The [optional download verification steps](README.md#optional-download-verification) explain how to check the detached PGP signatures and checksum before running the program.
 
 Expected PGP primary-key fingerprint:
 
@@ -48,7 +48,7 @@ E4FB 2399 AECC F9B9 447D ED47 2CE6 5343 4015 53A6
 
 Confirm the entire fingerprint through a PirateNetwork source you already trust. A key bundled beside the file is not an independent identity check. A valid signature ties the release bytes to the signing key; it does not establish that the program is defect-free.
 
-PGP signatures are separate from Windows Authenticode and Apple signing or notarisation. Do not turn off antivirus software or system protections to suppress a warning.
+PGP signatures are separate from Windows Authenticode and Apple signing or notarisation.
 
 Only release maintainers need signing-key material. Follow the [release-signing instructions](release-signing/README.md) to configure the release environment. Keep the private key and its passphrase in the documented GitHub environment secrets, never in source control, release assets, issues, build output, or chat messages.
 
