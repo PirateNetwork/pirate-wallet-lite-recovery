@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock
 
+from Crypto.Cipher import AES
 from nacl.secret import SecretBox
 
 from pirate_wallet_lite_recovery import legacy, skull_island
@@ -46,6 +47,14 @@ class SkullIslandTests(unittest.TestCase):
     def recover_document(self, data, password=PASSWORD):
         return skull_island.recover_json(io.BytesIO(json.dumps(data).encode('utf-8')),
                                         lambda: password)
+
+    def encrypted_document(self, padded):
+        data = self.fixture()
+        material = hmac.new(skull_island.KEY_SALT, PASSWORD.encode('utf-8'),
+                            hashlib.sha512).digest()
+        cipher = AES.new(material[:32], AES.MODE_CBC, material[32:48])
+        data['settings']['passPhrase'] = cipher.encrypt(padded).hex()
+        return data
 
     def test_modern_node_writer_fixture_and_unicode_password(self):
         provider = Mock(return_value=PASSWORD)
@@ -94,6 +103,29 @@ class SkullIslandTests(unittest.TestCase):
         data['settings']['passPhrase'] = cipher.hex()
         with self.assertRaisesRegex(RecoveryError, 'backup is damaged'):
             self.recover_document(data)
+
+    def test_invalid_pkcs7_padding_never_discloses_secrets(self):
+        padded = SEED.encode('utf-8')
+        padded += b' ' * (-len(padded) % AES.block_size)
+        for label, tail in (('zero', b'\x00'), ('oversized', b'\x11'),
+                            ('inconsistent', b'\x01\x02')):
+            data = self.encrypted_document(padded[:-len(tail)] + tail)
+            with self.subTest(padding=label):
+                with self.assertRaises(RecoveryError) as error:
+                    self.recover_document(data)
+                self.assertEqual(str(error.exception), skull_island.PASSWORD_ERROR)
+                self.assertNotIn(PASSWORD, str(error.exception))
+                self.assertNotIn('abandon', str(error.exception))
+
+    def test_decrypted_invalid_utf8_never_discloses_secrets(self):
+        plaintext = SEED.encode('utf-8') + b'\xff'
+        padding_length = AES.block_size - len(plaintext) % AES.block_size
+        padded = plaintext + bytes([padding_length]) * padding_length
+        with self.assertRaises(RecoveryError) as error:
+            self.recover_document(self.encrypted_document(padded))
+        self.assertEqual(str(error.exception), skull_island.PASSWORD_ERROR)
+        self.assertNotIn(PASSWORD, str(error.exception))
+        self.assertNotIn('abandon', str(error.exception))
 
     def test_ciphertext_tampering_cannot_bypass_mnemonic_validation(self):
         data = self.fixture()
